@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
+#include "OTA.h"
 
 // === DHT11 ===
 #include "DHT.h"
@@ -31,7 +31,7 @@ static const char* MQTT_PASSWD = "aloha22";
 
 #define ESP_WIFI_NAME          "Desk #2"
 #define DEVICE_NAME            "lampe_rgb1"
-#define FRIENDLY_NAME          "Lampe RGB"
+#define FRIENDLY_NAME          "Desk #2"
 
 /* ====== LED ====== */
 #define LED_PIN                 4
@@ -407,32 +407,16 @@ void setup() {
   mqtt.setKeepAlive(30);
   mqtt.setSocketTimeout(15);
 
-  // ---- OTA ----
-  ArduinoOTA.setHostname("esp-button");
-  ArduinoOTA
-    .onStart([]() {
-      Serial.println("[OTA] Start");
-    })
-    .onEnd([]() {
-      Serial.println("\n[OTA] End");
-    })
-    .onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("[OTA] Progress: %u%%\r", (progress * 100) / total);
-    })
-    .onError([](ota_error_t error) {
-      Serial.printf("[OTA] Error[%u]\n", error);
-    });
+  setupOTA();
 
-  ArduinoOTA.begin();
-  Serial.println("[OTA] Ready");
 }
 
 void loop() {
-  ArduinoOTA.handle();
-
-  if (WiFi.status() != WL_CONNECTED) wifiConnect();
+    if (WiFi.status() != WL_CONNECTED) wifiConnect();
   if (!mqtt.connected()) mqttEnsure();
   mqtt.loop();
+
+  loopOTA();
 
   loopEffects();
 
