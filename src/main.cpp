@@ -1,9 +1,10 @@
 #include <Arduino.h>
-#include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
+#include "WifiConnect.h"
 #include "OTA.h"
+#include "WifiConfig.h"
 
 // === DHT11 ===
 #include "DHT.h"
@@ -13,23 +14,12 @@ DHT dht(DHTPIN, DHTTYPE);
 unsigned long lastDHTMillis = 0;
 const unsigned long DHT_INTERVAL = 3000; // 30 s entre 2 mesures
 
-/* ====== CONFIG WIFI ====== */
-static const char* WIFI_SSID   = "Livebox-1714";
-static const char* WIFI_PASS   = "47PnSkZz7GtYv4QG7m";
-
-/* ===== CONFIG IP STATIQUE ===== */
-IPAddress local_IP(192, 168, 1, 19);   // <-- Choisis ici ton XX
-IPAddress gateway(192,168,1,1);     // Routeur
-IPAddress subnet(255,255,255,0);
-IPAddress dns1(1, 1, 1, 1);
-IPAddress dns2(8, 8, 8, 8);
 
 static const char* MQTT_HOST   = "192.168.1.31"; // IP ou hostname du broker
 static const uint16_t MQTT_PORT= 1883;
 static const char* MQTT_USER   = "mqttuser";
 static const char* MQTT_PASSWD = "aloha22";
 
-#define ESP_WIFI_NAME          "Desk #2"
 #define DEVICE_NAME            "lampe_rgb1"
 #define FRIENDLY_NAME          "Desk #2"
 
@@ -338,30 +328,7 @@ void loopEffects() {
 }
 
 /* ====== WIFI / MQTT ====== */
-void wifiConnect() {
-  Serial.println("[WiFi] Configuration IP statique...");
-  if (!WiFi.config(local_IP, gateway, subnet, dns1, dns2)) {
-    Serial.println("[WiFi] ERREUR config IP !");
-  }
-  
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  
-  Serial.printf("[WiFi] Connexion a %s ...\n", WIFI_SSID);
 
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
-    Serial.print(".");
-    delay(250);
-  }
-  Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("[WiFi] IP: %s\n",
-              WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("[WiFi] ECHEC (timeout)");
-  }
-}
 
 void mqttEnsure() {
   while (!mqtt.connected()) {
@@ -399,7 +366,7 @@ void setup() {
   // === DHT11 ===
   dht.begin();
 
-  wifiConnect();
+  wifiSetup(WIFI_CONFIG);
 
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
@@ -412,12 +379,14 @@ void setup() {
 }
 
 void loop() {
-    if (WiFi.status() != WL_CONNECTED) wifiConnect();
-  if (!mqtt.connected()) mqttEnsure();
+    wifiLoop();
+
+  if (wifiIsConnected() && !mqtt.connected()) {
+    mqttEnsure();
+  }
+
   mqtt.loop();
-
   loopOTA();
-
   loopEffects();
 
   // === DHT11 : lecture périodique ===

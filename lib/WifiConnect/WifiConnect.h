@@ -1,7 +1,23 @@
-#ifndef WIFI_CONNECT_H
-#define WIFI_CONNECT_H
+#pragma once
+#include <Arduino.h>
+#include <WiFi.h>
 
-void  wifiConnection(const char* ssid, const char* pass, int (*DBG)(const char*, ...));
+struct WifiConfig {
+  const char* ssid;
+  const char* password;
+  IPAddress   localIP;
+  IPAddress   gateway;
+  IPAddress   subnet;
+  IPAddress   dns1;
+  IPAddress   dns2;
+  const char* hostname;   // peut être nullptr si tu ne veux pas de hostname
+};
 
+// À appeler dans setup()
+void wifiSetup(const WifiConfig& cfg);
 
-#endif
+// À appeler dans loop()
+void wifiLoop();
+
+// Pour savoir si on est connecté
+bool wifiIsConnected();
