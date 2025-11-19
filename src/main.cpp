@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <Adafruit_NeoPixel.h>
 #include "WifiConnect.h"
 #include "OTA.h"
 #include "WifiConfig.h"
@@ -9,6 +8,9 @@
 #include "MqttClient.h"
 #include "MqttTemplates.h"
 #include "EnvSensor.h" 
+#include "LedController.h"
+#include "LedAnimations.h"
+#include "LedTypes.h"
 
 
 #define DH11_SENSOR_PIN       2
@@ -18,7 +20,7 @@
 #define FRAME_DELAY               30
 #define MAX_GLOBAL_BRIGHTNESS   255
 
-Adafruit_NeoPixel leds(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+// Adafruit_NeoPixel leds(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 const EnvSensorConfig ENV_SENSOR_CONFIG = {
   .pin        = DH11_SENSOR_PIN,
@@ -26,72 +28,26 @@ const EnvSensorConfig ENV_SENSOR_CONFIG = {
   .intervalMs = 30000
 };
 
-/* ====== ETAT LAMPE ====== */
-struct {
-  uint8_t r = 255, g = 160, b = 20;
-  uint8_t brightness = 0;     // 0..255
-  bool on = false;
-  enum Effect { NONE, RAINBOW, COLOR_WIPE } effect = NONE;
-} lamp;
+const LampConfig LAMP_CONFIG = {
+  .pin                 = LED_PIN,
+  .ledCount            = LED_COUNT,
+  .maxGlobalBrightness = MAX_GLOBAL_BRIGHTNESS,
+  .frameDelayMs        = FRAME_DELAY
+};
 
-uint32_t effectTicker = 0;
-uint16_t rainbowHue = 0;
-uint16_t wipeIndex = 0;
+LampState lamp = {
+  .r          = 255,
+  .g          = 160,
+  .b          = 20,
+  .brightness = 100,
+  .on         = false,
+  .effect     = LampEffect::NONE
+};
+
 
 /* ====== WIFI / MQTT ====== */
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
-
-/* ====== LEDS ====== */
-static inline uint8_t clampBrightness(uint8_t b) {
-  return (b > MAX_GLOBAL_BRIGHTNESS) ? MAX_GLOBAL_BRIGHTNESS : b;
-}
-
-void ledsInit() {
-  leds.begin();
-  leds.show(); // éteint
-}
-
-void ledsSetAll(uint8_t r, uint8_t g, uint8_t b, uint8_t globalBrightness) {
-  leds.setBrightness(globalBrightness);
-  for (uint16_t i = 0; i < LED_COUNT; i++) {
-    leds.setPixelColor(i, r, g, b);
-  }
-  leds.show();
-}
-
-void bootBlueBounce() {
-  leds.clear();
-  leds.show();
-
-  for (int i = 0; i < LED_COUNT; i++) {
-    leds.clear();
-    leds.setPixelColor(i, leds.Color(lamp.r, lamp.g, lamp.b));
-    leds.show();
-    delay(FRAME_DELAY);
-  }
-
-  for (int i = LED_COUNT - 2; i > 0; i--) {
-    leds.clear();
-    leds.setPixelColor(i, leds.Color(lamp.r, lamp.g, lamp.b));
-    leds.show();
-    delay(FRAME_DELAY);
-  }
-
-  leds.clear();
-  leds.show();
-}
-
-void applyStrip() {
-  if (!lamp.on) {
-    bootBlueBounce();  
-    ledsSetAll(0, 0, 0, 0);
-    return;
-  }
-  ledsSetAll(lamp.r, lamp.g, lamp.b, clampBrightness(lamp.brightness));
-}
-
-
 
 static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.printf("[MQTT] RX topic=%s len=%u : ", topic, length);
@@ -123,19 +79,18 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   if (doc["effect"].is<const char*>()) {
     String e = doc["effect"].as<const char*>();
-    if (e == "none")           lamp.effect = decltype(lamp)::NONE;
-    else if (e == "rainbow")   { lamp.effect = decltype(lamp)::RAINBOW;    rainbowHue = 0; }
-    else if (e == "color_wipe"){ lamp.effect = decltype(lamp)::COLOR_WIPE; wipeIndex  = 0; }
+    if (e == "none")           lamp.effect = LampEffect::NONE;
+    else if (e == "rainbow")   { lamp.effect = LampEffect::RAINBOW;    /* reset si besoin */ }
+    else if (e == "color_wipe"){ lamp.effect = LampEffect::COLOR_WIPE; /* reset si besoin */ }
   }
 
-  applyStrip();
+  lampApply();
 
-  // Nouveau : on utilise le template
   mqttPublishLampState(
     lamp.on,
     lamp.brightness,
     lamp.r, lamp.g, lamp.b,
-    static_cast<LampEffect>(lamp.effect)
+    lamp.effect           // LampEffect, à adapter dans MqttTemplates
   );
 }
 
@@ -147,57 +102,25 @@ void onConnectPublish() {
     lamp.on,
     lamp.brightness,
     lamp.r, lamp.g, lamp.b,
-    static_cast<LampEffect>(lamp.effect)
+    lamp.effect
   );
 
   // Publier une mesure tout de suite à la connexion MQTT
   envSensorPublishOnceOnConnect();
 }
 
-/* ====== EFFETS ====== */
-void loopEffects() {
-  uint32_t now = millis();
-  if (now - effectTicker < 20) return;   // ~50 FPS max
-  effectTicker = now;
 
-  if (!lamp.on) return;
-
-  switch (lamp.effect) {
-    case decltype(lamp)::RAINBOW: {
-      for (uint16_t i = 0; i < LED_COUNT; i++) {
-        uint16_t h = (rainbowHue + i * (65535UL / LED_COUNT)) & 0xFFFF;
-        uint8_t r = (uint8_t)(sin(0.024 * (h +   0)) * 127 + 128);
-        uint8_t g = (uint8_t)(sin(0.024 * (h + 8000)) * 127 + 128);
-        uint8_t b = (uint8_t)(sin(0.024 * (h +16000)) * 127 + 128);
-        leds.setPixelColor(i, r, g, b);
-      }
-      leds.setBrightness(clampBrightness(lamp.brightness));
-      leds.show();
-      rainbowHue += 256;
-    } break;
-
-    case decltype(lamp)::COLOR_WIPE: {
-      leds.setPixelColor(wipeIndex % LED_COUNT, lamp.r, lamp.g, lamp.b);
-      leds.setBrightness(clampBrightness(lamp.brightness));
-      leds.show();
-      wipeIndex++;
-      if (wipeIndex >= LED_COUNT) lamp.effect = decltype(lamp)::NONE;
-    } break;
-
-    default: break;
-  }
-}
-
-
-/* ====== SETUP / LOOP ====== */
 void setup() {
   Serial.begin(115200);
   uint32_t t0 = millis();
   while (!Serial && millis() - t0 < 3000) { delay(10); }
   Serial.println("\n[BOOT] Lampe RGB (ESP32-C3)");
 
-  ledsInit();
-  bootBlueBounce();
+  lampSetup(LAMP_CONFIG, &lamp);
+  lampApply();
+  bootBlueBounce(lampStrip(),  // si tu veux stric. appel ici
+                 lamp,
+                 FRAME_DELAY);
 
   // === DHT11 ===
    envSensorSetup(ENV_SENSOR_CONFIG);
@@ -218,13 +141,12 @@ void loop() {
     bool justConnected = mqttEnsureConnected();
     if (justConnected) {
       onConnectPublish();
-      applyStrip();
+      lampApply();   
     }
   }
 
   mqttLoop();
   loopOTA();
-  loopEffects();
-
+  lampLoopEffects();
   envSensorLoop();
 }

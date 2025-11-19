@@ -2,6 +2,8 @@
 #include <ArduinoJson.h>
 #include "MqttClient.h"
 #include "MqttConfig.h"
+#include "LedTypes.h"
+
 
 void mqttPublishLampState(bool on,
                           uint8_t brightness,
