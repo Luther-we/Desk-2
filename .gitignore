@@ -8,4 +8,4 @@
 src/WifiConfig.h
 src/WifiConfig.cpp
 
-src/lib/MqttClient/MqttSecrets.h
+lib/MqttClient/MqttSecrets.h
