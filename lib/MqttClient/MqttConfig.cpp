@@ -19,7 +19,7 @@
 #endif
 
 // Identité
-const char* const DEVICE_NAME   = "lampe_rgb1";
+const char* const DEVICE_NAME   = "desk2"; // utile pour id, sans espaces ni caractères spéciaux
 const char* const FRIENDLY_NAME = "Desk #2";
 
 // Topics

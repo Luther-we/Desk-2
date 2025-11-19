@@ -54,12 +54,13 @@ void mqttPublishDiscovery() {
   {
     JsonDocument doc;
 
-    doc["name"]    = FRIENDLY_NAME;
-    doc["uniq_id"] = String(DEVICE_NAME) + "_light";
-    doc["obj_id"]  = DEVICE_NAME;
+    doc["name"]    = "Saturday light";
+    doc["uniq_id"] = String(DEVICE_NAME) + "_saturday_light";
+    doc["obj_id"]  = String(DEVICE_NAME) + "_saturday_light";
 
     doc["cmd_t"]   = t_cmd;
     doc["stat_t"]  = t_state;
+    doc["device_class"]  = "light";
 
     doc["schema"]     = "json";
     doc["brightness"] = true;
@@ -75,8 +76,8 @@ void mqttPublishDiscovery() {
     JsonObject dev = doc["device"].to<JsonObject>();
     dev["name"] = FRIENDLY_NAME;
     dev["mf"]   = "DIY";
-    dev["mdl"]  = "ESP32 C3 RGB Lamp";
-    JsonArray ids = dev["ids"].to<JsonArray>();
+    dev["mdl"]  = "ESP32 C3 - Desk2";
+    JsonArray ids = dev["identifiers"].to<JsonArray>();
     ids.add(DEVICE_NAME);
 
     char buf[512];
@@ -89,7 +90,7 @@ void mqttPublishDiscovery() {
   {
     JsonDocument doc;
 
-    doc["name"]    = String(FRIENDLY_NAME) + " Température";
+    doc["name"]    = "Température";
     doc["uniq_id"] = String(DEVICE_NAME) + "_temperature";
     doc["obj_id"]  = String(DEVICE_NAME) + "_temperature";
 
@@ -105,8 +106,8 @@ void mqttPublishDiscovery() {
     JsonObject dev = doc["device"].to<JsonObject>();
     dev["name"] = FRIENDLY_NAME;
     dev["mf"]   = "DIY";
-    dev["mdl"]  = "ESP32 C3 RGB Lamp";
-    JsonArray ids = dev["ids"].to<JsonArray>();
+    dev["mdl"]  = "ESP32 C3 - Desk2";
+    JsonArray ids = dev["identifiers"].to<JsonArray>();
     ids.add(DEVICE_NAME);
 
     char buf[512];
@@ -119,7 +120,7 @@ void mqttPublishDiscovery() {
   {
     JsonDocument doc;
 
-    doc["name"]    = String(FRIENDLY_NAME) + " Humidité";
+    doc["name"]    = "Humidité";
     doc["uniq_id"] = String(DEVICE_NAME) + "_humidity";
     doc["obj_id"]  = String(DEVICE_NAME) + "_humidity";
 
@@ -135,8 +136,8 @@ void mqttPublishDiscovery() {
     JsonObject dev = doc["device"].to<JsonObject>();
     dev["name"] = FRIENDLY_NAME;
     dev["mf"]   = "DIY";
-    dev["mdl"]  = "ESP32 C3 RGB Lamp";
-    JsonArray ids = dev["ids"].to<JsonArray>();
+    dev["mdl"]  = "ESP32 C3 - Desk2";
+    JsonArray ids = dev["identifiers"].to<JsonArray>();
     ids.add(DEVICE_NAME);
 
     char buf[512];

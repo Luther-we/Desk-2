@@ -15,7 +15,7 @@
 #define DHTTYPE  DHT11
 DHT dht(DHTPIN, DHTTYPE);
 unsigned long lastDHTMillis = 0;
-const unsigned long DHT_INTERVAL = 3000; // 30 s entre 2 mesures
+const unsigned long DHT_INTERVAL = 30000; // 30 s entre 2 mesures
 
 
 /* ====== LED ====== */
@@ -141,6 +141,22 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 
+void onConnectPublish() {
+  mqttPublishDiscovery();
+
+      mqttPublishLampState(
+        lamp.on,
+        lamp.brightness,
+        lamp.r, lamp.g, lamp.b,
+        static_cast<LampEffect>(lamp.effect)
+      );
+      // TODO est ce important d'envoyer ces infos ici alors que la boucle suivante se charge déjà d'envoyer...
+      float h = dht.readHumidity();
+      float t = dht.readTemperature();
+      mqttPublishDht(t, h);
+}
+
+
 /* ====== EFFETS ====== */
 void loopEffects() {
   uint32_t now = millis();
@@ -204,20 +220,7 @@ void loop() {
   if (wifiIsConnected()) {
     bool justConnected = mqttEnsureConnected();
     if (justConnected) {
-      // On (re)annonce tout au moment de la connexion
-      mqttPublishDiscovery();
-
-      mqttPublishLampState(
-        lamp.on,
-        lamp.brightness,
-        lamp.r, lamp.g, lamp.b,
-        static_cast<LampEffect>(lamp.effect)
-      );
-      // TODO est ce important d'envoyer ces infos ici alors que la boucle suivante se charge déjà d'envoyer...
-      float h = dht.readHumidity();
-      float t = dht.readTemperature();
-      mqttPublishDht(t, h);
-
+      onConnectPublish();
       applyStrip();
     }
   }
