@@ -8,24 +8,23 @@
 #include "MqttConfig.h"
 #include "MqttClient.h"
 #include "MqttTemplates.h"
-
-// === DHT11 ===
-#include "DHT.h"
-#define DHTPIN   2   // <--- broche DATA du DHT11 (à adapter si besoin)
-#define DHTTYPE  DHT11
-DHT dht(DHTPIN, DHTTYPE);
-unsigned long lastDHTMillis = 0;
-const unsigned long DHT_INTERVAL = 30000; // 30 s entre 2 mesures
+#include "EnvSensor.h" 
 
 
-/* ====== LED ====== */
+#define DH11_SENSOR_PIN       2
 #define LED_PIN                 4
 #define LED_COUNT               26
 #define BLUE_LEVEL               120
 #define FRAME_DELAY               30
 #define MAX_GLOBAL_BRIGHTNESS   255
+
 Adafruit_NeoPixel leds(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
+const EnvSensorConfig ENV_SENSOR_CONFIG = {
+  .pin        = DH11_SENSOR_PIN,
+  .dhtType    = DHT11,
+  .intervalMs = 30000
+};
 
 /* ====== ETAT LAMPE ====== */
 struct {
@@ -144,18 +143,16 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
 void onConnectPublish() {
   mqttPublishDiscovery();
 
-      mqttPublishLampState(
-        lamp.on,
-        lamp.brightness,
-        lamp.r, lamp.g, lamp.b,
-        static_cast<LampEffect>(lamp.effect)
-      );
-      // TODO est ce important d'envoyer ces infos ici alors que la boucle suivante se charge déjà d'envoyer...
-      float h = dht.readHumidity();
-      float t = dht.readTemperature();
-      mqttPublishDht(t, h);
-}
+  mqttPublishLampState(
+    lamp.on,
+    lamp.brightness,
+    lamp.r, lamp.g, lamp.b,
+    static_cast<LampEffect>(lamp.effect)
+  );
 
+  // Publier une mesure tout de suite à la connexion MQTT
+  envSensorPublishOnceOnConnect();
+}
 
 /* ====== EFFETS ====== */
 void loopEffects() {
@@ -203,7 +200,7 @@ void setup() {
   bootBlueBounce();
 
   // === DHT11 ===
-  dht.begin();
+   envSensorSetup(ENV_SENSOR_CONFIG);
 
   Serial.printf("[DEBUG] WIFI_CONFIG.ssid = '%s'\n", WIFI_CONFIG.ssid);
   wifiSetup(WIFI_CONFIG);
@@ -229,12 +226,5 @@ void loop() {
   loopOTA();
   loopEffects();
 
-  // === DHT11 : lecture périodique ===
-  unsigned long now = millis();
-  if (now - lastDHTMillis > DHT_INTERVAL) {
-    lastDHTMillis = now;
-    float h = dht.readHumidity();
-    float t = dht.readTemperature();
-    mqttPublishDht(t, h);
-  }
+  envSensorLoop();
 }
