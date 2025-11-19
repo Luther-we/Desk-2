@@ -1,20 +1,21 @@
 #include "MqttConfig.h"
+#include "MqttSecrets.h"
 
 // Tu pourras passer ça en secrets PlatformIO plus tard
 #ifndef MQTT_HOST
-  #define MQTT_HOST   "192.168.1.31"
+  #define MQTT_HOST
 #endif
 
 #ifndef MQTT_PORT
-  #define MQTT_PORT   1883
+  #define MQTT_PORT
 #endif
 
 #ifndef MQTT_USER
-  #define MQTT_USER   "mqttuser"
+  #define MQTT_USER
 #endif
 
 #ifndef MQTT_PASSWD
-  #define MQTT_PASSWD "aloha22"
+  #define MQTT_PASSWD
 #endif
 
 // Identité
