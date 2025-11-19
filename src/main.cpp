@@ -5,6 +5,9 @@
 #include "WifiConnect.h"
 #include "OTA.h"
 #include "WifiConfig.h"
+#include "MqttConfig.h"
+#include "MqttClient.h"
+#include "MqttTemplates.h"
 
 // === DHT11 ===
 #include "DHT.h"
@@ -15,14 +18,6 @@ unsigned long lastDHTMillis = 0;
 const unsigned long DHT_INTERVAL = 3000; // 30 s entre 2 mesures
 
 
-static const char* MQTT_HOST   = "192.168.1.31"; // IP ou hostname du broker
-static const uint16_t MQTT_PORT= 1883;
-static const char* MQTT_USER   = "mqttuser";
-static const char* MQTT_PASSWD = "aloha22";
-
-#define DEVICE_NAME            "lampe_rgb1"
-#define FRIENDLY_NAME          "Desk #2"
-
 /* ====== LED ====== */
 #define LED_PIN                 4
 #define LED_COUNT               26
@@ -31,18 +26,6 @@ static const char* MQTT_PASSWD = "aloha22";
 #define MAX_GLOBAL_BRIGHTNESS   255
 Adafruit_NeoPixel leds(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-/* ====== TOPICS MQTT ====== */
-String t_base   = String(DEVICE_NAME) + "/";
-String t_cmd    = t_base + "light/set";
-String t_state  = t_base + "light/state";
-String t_avail  = t_base + "status";
-String t_disc   = "homeassistant/light/" + String(DEVICE_NAME) + "/config";
-
-// === DHT11 : topics capteurs ===
-String t_temp_state = t_base + "sensor/temperature";
-String t_hum_state  = t_base + "sensor/humidity";
-String t_temp_disc  = "homeassistant/sensor/" + String(DEVICE_NAME) + "_temperature/config";
-String t_hum_disc   = "homeassistant/sensor/" + String(DEVICE_NAME) + "_humidity/config";
 
 /* ====== ETAT LAMPE ====== */
 struct {
@@ -109,151 +92,8 @@ void applyStrip() {
   ledsSetAll(lamp.r, lamp.g, lamp.b, clampBrightness(lamp.brightness));
 }
 
-/* ====== MQTT PUBLISH ====== */
-void publishState() {
-  JsonDocument doc;
-  doc["state"] = lamp.on ? "ON" : "OFF";
-  doc["brightness"] = lamp.brightness;
 
-  JsonObject color = doc["color"].to<JsonObject>();
-  color["r"] = lamp.r;
-  color["g"] = lamp.g;
-  color["b"] = lamp.b;
 
-  switch (lamp.effect) {
-    case decltype(lamp)::NONE:       break;
-    case decltype(lamp)::RAINBOW:    doc["effect"] = "rainbow"; break;
-    case decltype(lamp)::COLOR_WIPE: doc["effect"] = "color_wipe"; break;
-  }
-
-  char buf[256];
-  size_t n = serializeJson(doc, buf, sizeof(buf));
-  mqtt.publish(t_state.c_str(), (const uint8_t*)buf, (unsigned int)n, true);
-}
-
-// === DHT11 : publication des mesures ===
-void publishDHTState() {
-  float h = dht.readHumidity();
-  float t = dht.readTemperature(); // °C
-
-  if (isnan(h) || isnan(t)) {
-    Serial.println("[DHT] Erreur de lecture");
-    return;
-  }
-
-  Serial.print("[DHT] T = ");
-  Serial.print(t);
-  Serial.print(" °C, H = ");
-  Serial.print(h);
-  Serial.println(" %");
-
-  char buf[16];
-
-  dtostrf(t, 2, 2, buf);
-  mqtt.publish(t_temp_state.c_str(), buf, true); // retain
-
-  dtostrf(h, 2, 2, buf);
-  mqtt.publish(t_hum_state.c_str(), buf, true);  // retain
-}
-
-void publishDiscovery() {
-  // === Discovery pour la lampe (light) ===
-  {
-    JsonDocument doc;
-
-    doc["name"]         = FRIENDLY_NAME;
-    doc["uniq_id"]      = String(DEVICE_NAME) + "_light";
-    doc["obj_id"]       = DEVICE_NAME;
-
-    doc["cmd_t"]        = t_cmd;
-    doc["stat_t"]       = t_state;
-
-    doc["schema"]       = "json";
-    doc["brightness"]   = true;
-
-    doc["color_mode"]   = true;
-    JsonArray modes = doc["supported_color_modes"].to<JsonArray>();
-    modes.add("rgb");
-
-    doc["avty_t"]       = t_avail;
-    doc["pl_avail"]     = "online";
-    doc["pl_not_avail"] = "offline";
-
-    JsonObject dev = doc["device"].to<JsonObject>();
-    dev["name"] = FRIENDLY_NAME;
-    dev["mf"]   = "DIY";
-    dev["mdl"]  = "ESP32 C3 RGB Lamp";
-    JsonArray ids = dev["ids"].to<JsonArray>();
-    ids.add(DEVICE_NAME);
-
-    char buf[512];
-    size_t n = serializeJson(doc, buf, sizeof(buf));
-    mqtt.publish(t_disc.c_str(), (const uint8_t*)buf, (unsigned int)n, true);
-    Serial.printf("[DISCOVERY] LIGHT %s\n", buf);
-  }
-
-  // === Discovery pour capteur température ===
-  {
-    JsonDocument doc;
-
-    doc["name"]    = String(FRIENDLY_NAME) + " Température";
-    doc["uniq_id"] = String(DEVICE_NAME) + "_temperature";
-    doc["obj_id"]  = String(DEVICE_NAME) + "_temperature";
-
-    doc["stat_t"]  = t_temp_state;
-    doc["unit_of_measurement"] = "°C";
-    doc["device_class"]        = "temperature";
-    doc["state_class"]         = "measurement";
-
-    doc["avty_t"]       = t_avail;
-    doc["pl_avail"]     = "online";
-    doc["pl_not_avail"] = "offline";
-
-    JsonObject dev = doc["device"].to<JsonObject>();
-    dev["name"] = FRIENDLY_NAME;
-    dev["mf"]   = "DIY";
-    dev["mdl"]  = "ESP32 C3 RGB Lamp";
-    JsonArray ids = dev["ids"].to<JsonArray>();
-    ids.add(DEVICE_NAME);
-
-    char buf[512];
-    size_t n = serializeJson(doc, buf, sizeof(buf));
-    mqtt.publish(t_temp_disc.c_str(), (const uint8_t*)buf, (unsigned int)n, true);
-    Serial.printf("[DISCOVERY] TEMP %s\n", buf);
-  }
-
-  // === Discovery pour capteur humidité ===
-  {
-    JsonDocument doc;
-
-    doc["name"]    = String(FRIENDLY_NAME) + " Humidité";
-    doc["uniq_id"] = String(DEVICE_NAME) + "_humidity";
-    doc["obj_id"]  = String(DEVICE_NAME) + "_humidity";
-
-    doc["stat_t"]  = t_hum_state;
-    doc["unit_of_measurement"] = "%";
-    doc["device_class"]        = "humidity";
-    doc["state_class"]         = "measurement";
-
-    doc["avty_t"]       = t_avail;
-    doc["pl_avail"]     = "online";
-    doc["pl_not_avail"] = "offline";
-
-    JsonObject dev = doc["device"].to<JsonObject>();
-    dev["name"] = FRIENDLY_NAME;
-    dev["mf"]   = "DIY";
-    dev["mdl"]  = "ESP32 C3 RGB Lamp";
-    JsonArray ids = dev["ids"].to<JsonArray>();
-    ids.add(DEVICE_NAME);
-
-    char buf[512];
-    size_t n = serializeJson(doc, buf, sizeof(buf));
-    mqtt.publish(t_hum_disc.c_str(), (const uint8_t*)buf, (unsigned int)n, true);
-    Serial.printf("[DISCOVERY] HUM %s\n", buf);
-  }
-}
-
-/* ====== MQTT RX ====== */
 static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.printf("[MQTT] RX topic=%s len=%u : ", topic, length);
   for (unsigned int i = 0; i < length; i++) Serial.write(payload[i]);
@@ -290,8 +130,16 @@ static void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 
   applyStrip();
-  publishState();
+
+  // Nouveau : on utilise le template
+  mqttPublishLampState(
+    lamp.on,
+    lamp.brightness,
+    lamp.r, lamp.g, lamp.b,
+    static_cast<LampEffect>(lamp.effect)
+  );
 }
+
 
 /* ====== EFFETS ====== */
 void loopEffects() {
@@ -327,31 +175,6 @@ void loopEffects() {
   }
 }
 
-/* ====== WIFI / MQTT ====== */
-
-
-void mqttEnsure() {
-  while (!mqtt.connected()) {
-    String clientId = String(DEVICE_NAME) + "_" + String((uint32_t)ESP.getEfuseMac(), HEX);
-    Serial.printf("[MQTT] Connexion a %s:%u ...\n", MQTT_HOST, MQTT_PORT);
-    bool ok = mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWD,
-                           t_avail.c_str(), 0, true, "offline");
-    if (ok) {
-      Serial.println("[MQTT] Connecte !");
-      mqtt.publish(t_avail.c_str(), "online", true);
-      Serial.printf("[MQTT] Subscribed to %s\n", t_cmd.c_str());
-      mqtt.subscribe(t_cmd.c_str());
-
-      publishDiscovery();
-      publishState();
-      publishDHTState();   // push un premier état des capteurs
-      applyStrip();
-    } else {
-      Serial.printf("[MQTT] Echec (state=%d), retry...\n", mqtt.state());
-      delay(1500);
-    }
-  }
-}
 
 /* ====== SETUP / LOOP ====== */
 void setup() {
@@ -366,13 +189,10 @@ void setup() {
   // === DHT11 ===
   dht.begin();
 
+  Serial.printf("[DEBUG] WIFI_CONFIG.ssid = '%s'\n", WIFI_CONFIG.ssid);
   wifiSetup(WIFI_CONFIG);
-
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setCallback(mqttCallback);
-  mqtt.setBufferSize(512);
-  mqtt.setKeepAlive(30);
-  mqtt.setSocketTimeout(15);
+  mqttSetup();
+  mqttClient().setCallback(mqttCallback); 
 
   setupOTA();
 
@@ -381,11 +201,28 @@ void setup() {
 void loop() {
     wifiLoop();
 
-  if (wifiIsConnected() && !mqtt.connected()) {
-    mqttEnsure();
+  if (wifiIsConnected()) {
+    bool justConnected = mqttEnsureConnected();
+    if (justConnected) {
+      // On (re)annonce tout au moment de la connexion
+      mqttPublishDiscovery();
+
+      mqttPublishLampState(
+        lamp.on,
+        lamp.brightness,
+        lamp.r, lamp.g, lamp.b,
+        static_cast<LampEffect>(lamp.effect)
+      );
+      // TODO est ce important d'envoyer ces infos ici alors que la boucle suivante se charge déjà d'envoyer...
+      float h = dht.readHumidity();
+      float t = dht.readTemperature();
+      mqttPublishDht(t, h);
+
+      applyStrip();
+    }
   }
 
-  mqtt.loop();
+  mqttLoop();
   loopOTA();
   loopEffects();
 
@@ -393,6 +230,8 @@ void loop() {
   unsigned long now = millis();
   if (now - lastDHTMillis > DHT_INTERVAL) {
     lastDHTMillis = now;
-    publishDHTState();
+    float h = dht.readHumidity();
+    float t = dht.readTemperature();
+    mqttPublishDht(t, h);
   }
 }

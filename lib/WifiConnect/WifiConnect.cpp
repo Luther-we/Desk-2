@@ -59,7 +59,7 @@ void wifiLoop() {
 
   unsigned long now = millis();
   if (now - g_lastAttempt > RECONNECT_INTERVAL) {
-    Serial.printf("[WiFi] Nouvelle tentative vers %s ...\n", g_cfg.ssid);
+    Serial.printf("[WiFi] Nouvelle tentative vers %s...\n", g_cfg.ssid);
     WiFi.disconnect();
     WiFi.begin(g_cfg.ssid, g_cfg.password);
     g_lastAttempt = now;
